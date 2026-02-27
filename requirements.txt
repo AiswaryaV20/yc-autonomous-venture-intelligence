@@ -3,7 +3,4 @@ uvicorn
 sqlalchemy
 psycopg2-binary
 pydantic
-sentence-transformers
-torch
-numpy
 python-dotenv
