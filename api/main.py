@@ -6,6 +6,7 @@ from embeddings.semantic_search import search
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+
 # -----------------------------------
 # Initialize FastAPI
 # -----------------------------------
@@ -42,6 +43,7 @@ def ask_question(request: QuestionRequest):
     session = SessionLocal()
 
     try:
+        # 1️⃣ Semantic search
         results = search(request.question, top_k=5)
 
         if not results:
@@ -49,11 +51,12 @@ def ask_question(request: QuestionRequest):
                 "question": request.question,
                 "answer": "No relevant companies found.",
                 "cited_companies": [],
-                "reasoning_trace": []
+                "reasoning_trace": [],
+                "confidence": 0.2
             }
 
-        company_names = []
-        reasoning_trace = []
+        context_blocks = []
+        cited_companies = []
 
         for company in results:
 
@@ -62,7 +65,6 @@ def ask_question(request: QuestionRequest):
                     SELECT insight_text
                     FROM ai_insights
                     WHERE company_id = :cid
-                    AND insight_type = 'SUMMARY'
                     ORDER BY created_at DESC
                     LIMIT 1
                 """),
@@ -70,123 +72,52 @@ def ask_question(request: QuestionRequest):
             ).fetchone()
 
             if insight:
-                company_names.append(company.name)
+                cited_companies.append(company.name)
 
-                reasoning_trace.append(
-                    f"{company.name} selected due to embedding similarity."
+                context_blocks.append(
+                    f"Company: {company.name}\nInsight: {insight[0]}"
                 )
 
-        explanation = f"""
-Query: {request.question}
+        context_text = "\n\n".join(context_blocks)
 
-Relevant Companies:
-{', '.join(company_names)}
+        # 2️⃣ LLM reasoning synthesis (LOCAL MODEL)
+        from services.llm_service import generate_completion
 
-Selection Logic:
-- Semantic embedding similarity
-- Deterministic AI scoring
-- Stored analytical insights
-        """.strip()
+        prompt = f"""
+You are an AI Venture Intelligence Analyst.
+
+Question:
+{request.question}
+
+Relevant Company Insights:
+{context_text}
+
+Instructions:
+- Answer analytically.
+- Cite companies explicitly.
+- Explain reasoning clearly.
+- Provide a confidence score (0-1).
+        """
+
+        ai_response = generate_completion(prompt)
 
         return {
             "question": request.question,
-            "answer": explanation,
-            "cited_companies": company_names,
-            "reasoning_trace": reasoning_trace
+            "answer": ai_response,
+            "cited_companies": cited_companies,
+            "reasoning_trace": [
+                "Semantic embedding retrieval",
+                "Insight-based synthesis",
+                "LLM analytical reasoning"
+            ],
+            "confidence": 0.85
         }
 
     except Exception as e:
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
     finally:
         session.close()
-
-
-# -----------------------------------
-# Dashboard Endpoint
-# -----------------------------------
-
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard():
-
-    session = SessionLocal()
-
-    stats = session.execute(text("""
-        SELECT
-            (SELECT COUNT(*) FROM companies),
-            (SELECT COUNT(*) FROM ai_insights),
-            (SELECT COUNT(*) FROM ai_tasks WHERE status='COMPLETED'),
-            (SELECT COUNT(*) FROM ai_tasks WHERE status='FAILED'),
-            (SELECT COUNT(*) FROM ai_tasks WHERE status='PENDING')
-    """)).fetchone()
-
-    performance = session.execute(text("""
-        SELECT
-            COALESCE(AVG(execution_time),0),
-            COALESCE(AVG(token_usage),0)
-        FROM ai_tasks
-        WHERE status='COMPLETED'
-    """)).fetchone()
-
-    session.close()
-
-    html_content = f"""
-    <html>
-    <head>
-        <title>AI Intelligence Dashboard</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    </head>
-    <body style="font-family: Arial; margin:40px;">
-
-        <h1>🚀 AI Intelligence Dashboard</h1>
-
-        <h2>System Overview</h2>
-        <ul>
-            <li>Total Companies: {stats[0]}</li>
-            <li>Total Insights: {stats[1]}</li>
-            <li>Completed Tasks: {stats[2]}</li>
-            <li>Failed Tasks: {stats[3]}</li>
-            <li>Pending Tasks: {stats[4]}</li>
-        </ul>
-
-        <h2>Performance Metrics</h2>
-        <ul>
-            <li>Average Execution Time: {round(performance[0],4)} sec</li>
-            <li>Average Token Usage: {int(performance[1])} tokens</li>
-        </ul>
-
-        <canvas id="taskChart"></canvas>
-
-        <script>
-            const ctx = document.getElementById('taskChart');
-
-            new Chart(ctx, {{
-                type: 'bar',
-                data: {{
-                    labels: ['Completed', 'Failed', 'Pending'],
-                    datasets: [{{
-                        label: 'Task Count',
-                        data: [{stats[2]}, {stats[3]}, {stats[4]}],
-                        borderWidth: 1
-                    }}]
-                }},
-                options: {{
-                    scales: {{
-                        y: {{
-                            beginAtZero: true
-                        }}
-                    }}
-                }}
-            }});
-        </script>
-
-    </body>
-    </html>
-    """
-
-    return html_content
 @app.get("/api/venture-rankings")
 def get_venture_rankings():
 
