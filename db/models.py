@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, Text, ForeignKey, TIMESTAMP
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
-from pgvector.sqlalchemy import Vector
 from db.database import Base
+
 
 class Company(Base):
     __tablename__ = "companies"
@@ -15,6 +15,7 @@ class Company(Base):
     last_seen_at = Column(TIMESTAMP, server_default=func.now())
     is_active = Column(Boolean, default=True)
 
+
 class CompanySnapshot(Base):
     __tablename__ = "company_snapshots"
 
@@ -24,14 +25,16 @@ class CompanySnapshot(Base):
     snapshot_hash = Column(String)
     scraped_at = Column(TIMESTAMP, server_default=func.now())
 
+
 class CompanyEmbedding(Base):
     __tablename__ = "company_embeddings"
 
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id"))
-    embedding = Column(Vector(1536))
+    embedding = Column(Text)   # replaced VECTOR with TEXT
     source_type = Column(String)
     created_at = Column(TIMESTAMP, server_default=func.now())
+
 
 class AIInsight(Base):
     __tablename__ = "ai_insights"
@@ -44,6 +47,7 @@ class AIInsight(Base):
     model_name = Column(String)
     prompt_version = Column(String)
     created_at = Column(TIMESTAMP, server_default=func.now())
+
 
 class AITask(Base):
     __tablename__ = "ai_tasks"

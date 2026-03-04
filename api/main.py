@@ -13,17 +13,19 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
+
 # -----------------------------------
 # CORS (Allow frontend connection)
 # -----------------------------------
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Allow all temporarily (fixes fetch error)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # -----------------------------------
 # Request Model
@@ -43,7 +45,8 @@ def ask_question(request: QuestionRequest):
     session = SessionLocal()
 
     try:
-        # 1️⃣ Semantic search
+
+        # 1️⃣ Semantic Search
         results = search(request.question, top_k=5)
 
         if not results:
@@ -55,8 +58,8 @@ def ask_question(request: QuestionRequest):
                 "confidence": 0.2
             }
 
-        context_blocks = []
         cited_companies = []
+        reasoning_trace = []
 
         for company in results:
 
@@ -74,42 +77,25 @@ def ask_question(request: QuestionRequest):
             if insight:
                 cited_companies.append(company.name)
 
-                context_blocks.append(
-                    f"Company: {company.name}\nInsight: {insight[0]}"
+                reasoning_trace.append(
+                    f"{company.name} selected via semantic similarity and stored AI insights."
                 )
 
-        context_text = "\n\n".join(context_blocks)
+        answer_text = f"""
+Question: {request.question}
 
-        # 2️⃣ LLM reasoning synthesis (LOCAL MODEL)
-        from services.llm_service import generate_completion
+Relevant YC Companies:
+{", ".join(cited_companies)}
 
-        prompt = f"""
-You are an AI Venture Intelligence Analyst.
-
-Question:
-{request.question}
-
-Relevant Company Insights:
-{context_text}
-
-Instructions:
-- Answer analytically.
-- Cite companies explicitly.
-- Explain reasoning clearly.
-- Provide a confidence score (0-1).
-        """
-
-        ai_response = generate_completion(prompt)
+These companies were retrieved using semantic vector similarity
+and validated using stored AI insights in the database.
+"""
 
         return {
             "question": request.question,
-            "answer": ai_response,
+            "answer": answer_text.strip(),
             "cited_companies": cited_companies,
-            "reasoning_trace": [
-                "Semantic embedding retrieval",
-                "Insight-based synthesis",
-                "LLM analytical reasoning"
-            ],
+            "reasoning_trace": reasoning_trace,
             "confidence": 0.85
         }
 
@@ -118,6 +104,12 @@ Instructions:
 
     finally:
         session.close()
+
+
+# -----------------------------------
+# Venture Rankings Endpoint
+# -----------------------------------
+
 @app.get("/api/venture-rankings")
 def get_venture_rankings():
 
@@ -151,3 +143,45 @@ def get_venture_rankings():
     return {
         "top_venture_opportunities": rankings
     }
+
+
+# -----------------------------------
+# Dashboard Endpoint
+# -----------------------------------
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard():
+
+    session = SessionLocal()
+
+    stats = session.execute(text("""
+        SELECT
+            (SELECT COUNT(*) FROM companies),
+            (SELECT COUNT(*) FROM ai_insights),
+            (SELECT COUNT(*) FROM venture_scores)
+    """)).fetchone()
+
+    session.close()
+
+    html_content = f"""
+    <html>
+    <head>
+        <title>YC AI Intelligence Dashboard</title>
+    </head>
+    <body style="font-family: Arial; margin:40px;">
+
+        <h1>🚀 YC Autonomous Venture Intelligence</h1>
+
+        <h2>System Overview</h2>
+
+        <ul>
+            <li>Total Companies: {stats[0]}</li>
+            <li>Total AI Insights: {stats[1]}</li>
+            <li>Total Venture Scores: {stats[2]}</li>
+        </ul>
+
+    </body>
+    </html>
+    """
+
+    return html_content
