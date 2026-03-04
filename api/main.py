@@ -144,7 +144,6 @@ def get_venture_rankings():
         "top_venture_opportunities": rankings
     }
 
-
 # -----------------------------------
 # Dashboard Endpoint
 # -----------------------------------
@@ -185,3 +184,6 @@ def dashboard():
     """
 
     return html_content
+@app.get("/")
+def root():
+    return {"message": "YC Autonomous Venture Intelligence API running"}
